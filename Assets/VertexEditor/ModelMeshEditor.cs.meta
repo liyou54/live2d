@@ -4,8 +4,9 @@ MonoImporter:
   externalObjects: {}
   serializedVersion: 2
   defaultReferences:
-  - mesh: {instanceID: 0}
   - pointPrefab: {fileID: 2102602663243693192, guid: 5a34a95b3896111489bb6c8b73179724, type: 3}
+  - backGroundTex: {instanceID: 0}
+  - backGroundPrefab: {fileID: 2102602663243693192, guid: 71ff045f8dcf58443b479cb5667b6dd5, type: 3}
   executionOrder: 0
   icon: {instanceID: 0}
   userData: 

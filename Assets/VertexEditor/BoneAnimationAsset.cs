@@ -4,16 +4,30 @@ using UnityEngine;
 
 namespace VertexEditor
 {
-    [Serializable]
+    [System.Serializable]
     public class BoneAnimationAsset
     {
-        public class AnimationClip
+        [System.Serializable]
+        public class AnimationClipData
         {
-            public Vector2 Position;
+            public Vector2 Position
+            {
+                get { return new Vector2(x, y); }
+                set
+                {
+                    x = value.x;
+                    y = value.y;
+                }
+            }
+
+            private float x;
+            private float y;
             public float Time;
         }
-        public Mesh Mesh;
-        public List<List<AnimationClip>> AnimationPointsClips;
-        public List<AnimationClip> BoneClips;
+
+        public string MeshPath;
+        public List<List<AnimationClipData>> AnimationPointsClips;
+        public List<AnimationClipData> BonePosClips;
+        public List<AnimationClipData> BoneRotationClips;
     }
 }
