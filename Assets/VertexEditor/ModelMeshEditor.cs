@@ -583,7 +583,7 @@ namespace VertexEditor
                     }
                 }
 
-                if (curvex == null)
+                if (curvex == null || curvex.keys.Length == 0)
                 {
                     var temp = new BoneAnimationAsset.AnimationClipData
                     {
