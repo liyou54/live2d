@@ -96,6 +96,7 @@ namespace VertexEditor
         public void Init2()
         {
             isInit = true;
+            pointIndex = 0;
             // 清除原始数据
             var children = GetComponentsInChildren<Transform>(true);
             for (int i = children.Length - 1; i >= 1; i--)
