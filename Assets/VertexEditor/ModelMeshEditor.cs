@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using Sirenix.OdinInspector;
 using Unity.VisualScripting;
 using UnityEditor;
@@ -33,6 +32,11 @@ public class PointData
             gb.transform.localPosition = value;
         }
     }
+
+    public bool IsDel()
+    {
+        return gb == null;
+    }
 }
 
 namespace VertexEditor
@@ -46,8 +50,6 @@ namespace VertexEditor
         private static readonly string pointTag = "EditorPoint";
         [ReadOnly, SerializeField] bool isInit = false;
         [ReadOnly, SerializeField] string basePath = "Assets/Resources/Live2d/Data";
-
-        [SerializeField] private string dataName;
 
         // 控制点预制体
         [AssetsOnly, SerializeField] private GameObject pointPrefab;
@@ -70,12 +72,31 @@ namespace VertexEditor
         private List<Vector3> _vertices = new List<Vector3>();
         private List<int> _triangles = new List<int>();
         private List<Vector2> _uv = new List<Vector2>();
-        private AnimationClip _clip;
-        private int  pointIndex;
-        void Start()
+
+        private GameObject _parentGo;
+        private List<AnimationClip> _clips;
+        private int _pointIndex;
+        private bool isEditor;
+        private String EditorBtnText = "保存";
+
+        private bool IsEditor
         {
-            Init2();
+            set
+            {
+                if (value)
+                {
+                    EditorBtnText = "保存";
+                }
+                else
+                {
+                    EditorBtnText = "编辑";
+                }
+
+                isEditor = value;
+            }
+            get { return isEditor; }
         }
+
 
         private string GetMeshPath()
         {
@@ -92,17 +113,36 @@ namespace VertexEditor
             return $"{basePath}/{dataName}/";
         }
 
-        [Button]
-        public void Init2()
+        public void InitDataWithPrefab(GameObject prefab, string resName)
+        {
+            this.pointPrefab = prefab;
+            dataName = resName;
+            InitData();
+        }
+
+        #region 编辑器按钮
+
+        [InlineButton("SaveOrEditor", "$EditorBtnText")] [InlineButton("InitData", "初始化数据")] [SerializeField]
+        private string dataName;
+
+        public void InitData()
         {
             isInit = true;
-            pointIndex = 0;
+            IsEditor = true;
+            _pointIndex = 0;
+            _clips = new List<AnimationClip>();
+            _clips.Add(new AnimationClip());
             // 清除原始数据
             var children = GetComponentsInChildren<Transform>(true);
             for (int i = children.Length - 1; i >= 1; i--)
             {
                 DestroyImmediate(children[i].gameObject);
             }
+
+            _parentGo = new GameObject(gameObject.name + "_parent");
+            _parentGo.transform.parent = transform;
+            _parentGo.transform.localPosition = Vector3.zero;
+            _parentGo.transform.localRotation = Quaternion.identity;
 
             //添加动画组件
             Animation animationComponent = GetComponent<Animation>();
@@ -131,86 +171,6 @@ namespace VertexEditor
             SetAnimationCurve(animationComponent, boneAnimationAsset);
         }
 
-        public void SetAnimationCurve(Animation animationComp, BoneAnimationAsset boneAnimationAsset)
-        {
-            _clip = new AnimationClip();
-            AnimationCurve curvePosX = new AnimationCurve();
-            AnimationCurve curvePosY = new AnimationCurve();
-            AnimationCurve curveRotX = new AnimationCurve();
-            AnimationCurve curveRotZ = new AnimationCurve();
-            if (boneAnimationAsset.BonePosClips != null)
-            {
-                foreach (var bonePosClip in boneAnimationAsset.BonePosClips)
-                {
-                    curvePosX.AddKey(bonePosClip.Time, bonePosClip.Position.x);
-                    curvePosY.AddKey(bonePosClip.Time, bonePosClip.Position.y);
-                }
-            }
-
-            if (boneAnimationAsset.BoneRotationClips != null)
-            {
-                foreach (var boneRotClip in boneAnimationAsset.BoneRotationClips)
-                {
-                    curveRotX.AddKey(boneRotClip.Time, boneRotClip.Position.x);
-                    curveRotZ.AddKey(boneRotClip.Time, boneRotClip.Position.y);
-                }
-            }
-
-            _clip.SetCurve("", typeof(Transform), "localPosition.x", curvePosX);
-            _clip.SetCurve("", typeof(Transform), "localPosition.y", curvePosY);
-            _clip.SetCurve("", typeof(Transform), "localEulerAnglesRaw.x", curveRotX);
-            _clip.SetCurve("", typeof(Transform), "localEulerAnglesRaw.z", curveRotZ);
-
-            for (int i = 0; i < pointDatas.Count; i++)
-            {
-                var pointGb = pointDatas[i].gb;
-                AnimationCurve curveX = new AnimationCurve();
-                AnimationCurve curveY = new AnimationCurve();
-                if (boneAnimationAsset.AnimationPointsClips.Count > i)
-                {
-                    var pointClip = boneAnimationAsset.AnimationPointsClips[i];
-                    if (pointClip?.Count > 0)
-                    {
-                        for (int key = 0; key < pointClip.Count; key++)
-                        {
-                            curveX.AddKey(pointClip[key].Time, pointClip[key].Position.x);
-                            curveY.AddKey(pointClip[key].Time, pointClip[key].Position.y);
-                        }
-                    }
-                }
-
-                _clip.SetCurve(pointGb.name, typeof(Transform), "localPosition.x", curveX);
-                _clip.SetCurve(pointGb.name, typeof(Transform), "localPosition.y", curveY);
-            }
-
-            AnimationUtility.SetAnimationClips(animationComp, new[] {_clip});
-        }
-
-        public void CreateEditorPoint()
-        {
-            var meshFilter = GetComponent<MeshFilter>();
-            _vertices = new List<Vector3>(_mesh.vertices);
-            _triangles = new List<int>(_mesh.triangles);
-            _uv = new List<Vector2>(_mesh.uv);
-            meshFilter.sharedMesh = _mesh;
-            
-            pointDatas = new List<PointData>(_vertices.Count);
-            for (int i = 0; i < _vertices.Count; i++)
-            {
-                var point = Instantiate(pointPrefab, transform, false);
-                point.transform.localPosition = _vertices[i];
-                point.name = gameObject.name + "_" + i;
-                point.tag = pointTag;
-                pointDatas.Add(new PointData(_vertices[i], point));
-                pointIndex++;
-
-            }
-
-            var backGameObject = Instantiate(backGroundPrefab, transform, false);
-            backGameObject.transform.localScale = new Vector3(backGroundSize.x, backGroundSize.y, 1);
-            backGameObject.SetActive(false);
-        }
-
         [ButtonGroup("Init"), Button("计算UV")]
         private void CreateUV()
         {
@@ -223,13 +183,8 @@ namespace VertexEditor
             _mesh.uv = _uv.ToArray();
         }
 
-        private Vector2 CalacUv(Vector3 pos)
-        {
-            return pos / backGroundSize + Vector2.one * 0.5f;
-        }
-
         [ButtonGroup, Button("增加顶点")]
-        public void AddPoint()
+        private void AddPoint()
         {
             Transform[] transforms = Selection.transforms;
             var selectNum = 0;
@@ -239,7 +194,7 @@ namespace VertexEditor
             {
                 foreach (var trans in transforms)
                 {
-                    if (trans.CompareTag(pointTag))
+                    if (trans.CompareTag(pointTag) && trans.parent == _parentGo.transform)
                     {
                         selectNum++;
                         if (selectNum == 1)
@@ -262,32 +217,33 @@ namespace VertexEditor
 
             _vertices.Add(pos);
             _uv.Add(CalacUv(pos));
-            var point = Instantiate(pointPrefab, transform, false);
+            var point = Instantiate(pointPrefab, _parentGo.transform, false);
             point.transform.position = pos;
-            point.name = gameObject.name + "_" + pointIndex;
+            point.name = gameObject.name + "_" + _pointIndex;
             point.tag = pointTag;
             pointDatas.Add(new PointData(pos, point));
+            var path = $"{_parentGo.name}/{point.name}";
             EditorCurveBinding bingx = new EditorCurveBinding()
             {
-                path = point.name,
+                path = path,
                 type = typeof(Transform),
                 propertyName = "m_LocalPosition.x"
             };
             EditorCurveBinding bingy = new EditorCurveBinding()
             {
-                path = point.name,
+                path = path,
                 type = typeof(Transform),
                 propertyName = "m_LocalPosition.y"
             };
-            AnimationUtility.SetEditorCurve(_clip, bingx, new AnimationCurve());
-            AnimationUtility.SetEditorCurve(_clip, bingy, new AnimationCurve());
-            pointIndex++;
+            AnimationUtility.SetEditorCurve(_clips[0], bingx, new AnimationCurve());
+            AnimationUtility.SetEditorCurve(_clips[0], bingy, new AnimationCurve());
+            _pointIndex++;
             _mesh.vertices = _vertices.ToArray();
             _mesh.uv = _uv.ToArray();
         }
 
         [ButtonGroup, Button("删除点")]
-        public void DeletePoint()
+        private void DeletePoint()
         {
             Transform[] transforms = Selection.transforms;
             if (transforms.Length == 0)
@@ -299,13 +255,13 @@ namespace VertexEditor
 
             foreach (var trans in transforms)
             {
-                if (trans.CompareTag(pointTag))
+                if (trans.CompareTag(pointTag) && trans.parent == _parentGo.transform)
                 {
                     for (int i = pointDatas.Count - 1; i >= 0; i--)
                     {
                         if (trans.GameObject() == pointDatas[i].gb)
                         {
-                            gb = DeletePoint(pointDatas[i]);
+                            DeletePoint(pointDatas[i], ref gb);
                         }
                     }
                 }
@@ -314,12 +270,12 @@ namespace VertexEditor
             if (gb != null)
             {
                 DestroyImmediate(gb);
-                pointIndex--;
+                _pointIndex--;
             }
         }
 
         [ButtonGroup, Button("增加面")]
-        public void AddFace()
+        private void AddFace()
         {
             Transform[] transforms = Selection.transforms;
             var selectNum = 0;
@@ -334,7 +290,7 @@ namespace VertexEditor
 
             foreach (var trans in transforms)
             {
-                if (!trans.CompareTag(pointTag))
+                if (!trans.CompareTag(pointTag) || trans.parent != _parentGo.transform)
                 {
                     continue;
                 }
@@ -395,7 +351,7 @@ namespace VertexEditor
         }
 
         [ButtonGroup, Button("翻转面")]
-        public void RevertFace()
+        private void RevertFace()
         {
             Transform[] transforms = Selection.transforms;
             var selectNum = 0;
@@ -410,7 +366,7 @@ namespace VertexEditor
 
             foreach (var trans in transforms)
             {
-                if (!trans.CompareTag(pointTag))
+                if (!trans.CompareTag(pointTag) || trans.parent != _parentGo.transform)
                 {
                     continue;
                 }
@@ -468,8 +424,57 @@ namespace VertexEditor
             Debug.Log("没有找到面");
         }
 
-        [Button("保存数据")]
-        public void SaveData()
+        private void SaveOrEditor()
+        {
+            if (IsEditor)
+            {
+                SaveData();
+                _parentGo.SetActive(false);
+                IsEditor = false;
+            }
+            else
+            {
+                _parentGo.SetActive(true);
+                IsEditor = true;
+            }
+        }
+
+        [InlineButton("AddNextNode", "添加子节点")] [SerializeField]
+        private string nodeName;
+
+        private void AddNextNode()
+        {
+            if (string.IsNullOrEmpty(nodeName))
+            {
+                return;
+            }
+
+            var node = new GameObject(nodeName);
+            node.transform.SetParent(transform);
+            node.transform.localPosition = Vector3.zero;
+            node.transform.localRotation = Quaternion.identity;
+
+            var editor = node.AddComponent<ModelMeshEditor>();
+            editor.InitDataWithPrefab(pointPrefab, nodeName);
+            var clips = AnimationUtility.GetAnimationClips(node);
+            _clips.AddRange(clips);
+            var cop = GetComponent<Animation>();
+            AnimationUtility.SetAnimationClips(cop, _clips.ToArray());
+        }
+
+        [Button("test")]
+        void test()
+        {
+            Animation animation = GetComponent<Animation>();
+            // var a = animation.GetClipCount();
+            // Debug.Log(a);
+            // animation.AddClip(_clips[0], _clips[0].name);
+            animation.Play(_clips[0].name);
+        }
+
+        #endregion
+
+        private void SaveData()
         {
             var asset = GetSerializeData();
             var path = GetDataDirPath();
@@ -478,20 +483,105 @@ namespace VertexEditor
             Util.Util.SaveSerializeData(path, dataName + ".data", asset);
         }
 
+        private Vector2 CalacUv(Vector3 pos)
+        {
+            return pos / backGroundSize + Vector2.one * 0.5f;
+        }
+
+        private void SetAnimationCurve(Animation animationComp, BoneAnimationAsset boneAnimationAsset)
+        {
+            _clips[0] = new AnimationClip();
+            _clips[0].name = dataName;
+            AnimationCurve curvePosX = new AnimationCurve();
+            AnimationCurve curvePosY = new AnimationCurve();
+            AnimationCurve curveRotX = new AnimationCurve();
+            AnimationCurve curveRotZ = new AnimationCurve();
+            if (boneAnimationAsset.BonePosClips != null)
+            {
+                foreach (var bonePosClip in boneAnimationAsset.BonePosClips)
+                {
+                    curvePosX.AddKey(bonePosClip.Time, bonePosClip.Position.x);
+                    curvePosY.AddKey(bonePosClip.Time, bonePosClip.Position.y);
+                }
+            }
+
+            if (boneAnimationAsset.BoneRotationClips != null)
+            {
+                foreach (var boneRotClip in boneAnimationAsset.BoneRotationClips)
+                {
+                    curveRotX.AddKey(boneRotClip.Time, boneRotClip.Position.x);
+                    curveRotZ.AddKey(boneRotClip.Time, boneRotClip.Position.y);
+                }
+            }
+
+            _clips[0].SetCurve("", typeof(Transform), "localPosition.x", curvePosX);
+            _clips[0].SetCurve("", typeof(Transform), "localPosition.y", curvePosY);
+            _clips[0].SetCurve("", typeof(Transform), "localEulerAnglesRaw.x", curveRotX);
+            _clips[0].SetCurve("", typeof(Transform), "localEulerAnglesRaw.z", curveRotZ);
+
+            for (int i = 0; i < pointDatas.Count; i++)
+            {
+                var pointGb = pointDatas[i].gb;
+                AnimationCurve curveX = new AnimationCurve();
+                AnimationCurve curveY = new AnimationCurve();
+                if (boneAnimationAsset.AnimationPointsClips.Count > i)
+                {
+                    var pointClip = boneAnimationAsset.AnimationPointsClips[i];
+                    if (pointClip?.Count > 0)
+                    {
+                        for (int key = 0; key < pointClip.Count; key++)
+                        {
+                            curveX.AddKey(pointClip[key].Time, pointClip[key].Position.x);
+                            curveY.AddKey(pointClip[key].Time, pointClip[key].Position.y);
+                        }
+                    }
+                }
+
+                var path = $"{_parentGo.name}/{pointGb.name}";
+                _clips[0].SetCurve(path, typeof(Transform), "localPosition.x", curveX);
+                _clips[0].SetCurve(path, typeof(Transform), "localPosition.y", curveY);
+            }
+
+            AnimationUtility.SetAnimationClips(animationComp, _clips.ToArray());
+        }
+
+        private void CreateEditorPoint()
+        {
+            var meshFilter = GetComponent<MeshFilter>();
+            _vertices = new List<Vector3>(_mesh.vertices);
+            _triangles = new List<int>(_mesh.triangles);
+            _uv = new List<Vector2>(_mesh.uv);
+            meshFilter.sharedMesh = _mesh;
+
+            pointDatas = new List<PointData>(_vertices.Count);
+            for (int i = 0; i < _vertices.Count; i++)
+            {
+                var point = Instantiate(pointPrefab, _parentGo.transform, false);
+                point.transform.localPosition = _vertices[i];
+                point.name = gameObject.name + "_" + i;
+                point.tag = pointTag;
+                pointDatas.Add(new PointData(_vertices[i], point));
+                _pointIndex++;
+            }
+
+            var backGameObject = Instantiate(backGroundPrefab, _parentGo.transform, false);
+            backGameObject.transform.localScale = new Vector3(backGroundSize.x, backGroundSize.y, 1);
+            backGameObject.SetActive(false);
+        }
 
         private BoneAnimationAsset GetSerializeData()
         {
             var boneAnimationAsset = new BoneAnimationAsset();
             var animaltion = GetComponent<Animation>();
             var clips = AnimationUtility.GetAnimationClips(animaltion);
-            Assert.IsFalse(clips.Length != 1, "clips.Length != 1");
+            Assert.IsFalse(clips.Length == 0, "clips.Length == 0");
             var binds = AnimationUtility.GetCurveBindings(clips[0]);
             SetAnimationClipRoot(clips[0], binds, boneAnimationAsset);
             SetAnimationClipPoints(clips[0], binds, boneAnimationAsset);
             return boneAnimationAsset;
         }
 
-        void SetAnimationClipRoot(AnimationClip clip, EditorCurveBinding[] binds, BoneAnimationAsset res)
+        private void SetAnimationClipRoot(AnimationClip clip, EditorCurveBinding[] binds, BoneAnimationAsset res)
         {
             AnimationCurve curvePosX = null, curvePosY = null, curveRotX = null, curveRotZ = null;
             foreach (var bind in binds)
@@ -546,7 +636,7 @@ namespace VertexEditor
             res.BoneRotationClips = rotClips;
         }
 
-        public static string GetGameObjectRelativePath(GameObject child, GameObject parent)
+        private static string GetGameObjectRelativePath(GameObject child, GameObject parent)
         {
             var res = "";
             if (child == parent)
@@ -564,7 +654,7 @@ namespace VertexEditor
             return res;
         }
 
-        void SetAnimationClipPoints(AnimationClip clip, EditorCurveBinding[] binds, BoneAnimationAsset res)
+        private void SetAnimationClipPoints(AnimationClip clip, EditorCurveBinding[] binds, BoneAnimationAsset res)
         {
             var AllPoinstData = new List<List<BoneAnimationAsset.AnimationClipData>>();
             res.AnimationPointsClips = AllPoinstData;
@@ -627,11 +717,10 @@ namespace VertexEditor
         }
 
         //TODO 重写删除点
-        public GameObject DeletePoint(PointData pointData)
+        private void DeletePoint(PointData pointData, ref GameObject needDelGO)
         {
             int delFace = 0;
             int index = 0;
-            GameObject gb = null;
             for (int i = 0; i < pointDatas.Count; i++)
             {
                 if (pointDatas[i] == pointData)
@@ -641,30 +730,31 @@ namespace VertexEditor
                     _uv.RemoveAt(i);
                     if (pointData.gb != null)
                     {
+                        var path = $"{_parentGo.name}/{pointData.gb.name}";
                         EditorCurveBinding bingx = new EditorCurveBinding()
                         {
-                            path = pointData.gb.name,
+                            path = path,
                             type = typeof(Transform),
                             propertyName = "m_LocalPosition.x"
                         };
                         EditorCurveBinding bingy = new EditorCurveBinding()
                         {
-                            path = pointData.gb.name,
+                            path = path,
                             type = typeof(Transform),
                             propertyName = "m_LocalPosition.y"
                         };
                         EditorCurveBinding bingz = new EditorCurveBinding()
                         {
-                            path = pointData.gb.name,
+                            path = path,
                             type = typeof(Transform),
                             propertyName = "m_LocalPosition.z"
                         };
-                        AnimationUtility.SetEditorCurve(_clip, bingx, null);
-                        AnimationUtility.SetEditorCurve(_clip, bingy, null);
-                        AnimationUtility.SetEditorCurve(_clip, bingz, null);
+                        AnimationUtility.SetEditorCurve(_clips[0], bingx, null);
+                        AnimationUtility.SetEditorCurve(_clips[0], bingy, null);
+                        AnimationUtility.SetEditorCurve(_clips[0], bingz, null);
+                        needDelGO = pointData.gb;
                     }
 
-                    gb = pointData.gb;
                     pointDatas.Remove(pointData);
                 }
             }
@@ -697,10 +787,9 @@ namespace VertexEditor
             _mesh.uv = _uv.ToArray();
 
             Debug.Log($"Remove {index} vert ; Remove {delFace} faces");
-            return gb;
         }
 
-        public bool PointMove(PointData pointData)
+        private bool PointMove(PointData pointData)
         {
             var index = pointDatas.IndexOf(pointData);
             if (pointData.Position != _vertices[index])
@@ -718,6 +807,15 @@ namespace VertexEditor
             if (isInit == false)
             {
                 return;
+            }
+
+            for (int i = pointDatas.Count - 1; i >= 0; i--)
+            {
+                if (pointDatas[i].IsDel())
+                {
+                    GameObject gameObj = null;
+                    DeletePoint(pointDatas[i], ref gameObj);
+                }
             }
 
             var isDirty = false;

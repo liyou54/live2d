@@ -40,7 +40,7 @@ namespace Util
             fs.Close();
             AssetDatabase.Refresh();
         }
-        public static T BinaryDeserilize<T>(string f)
+        public static T BinaryDeserilize<T>(string f) 
         {
             if (!File.Exists(f)) return default(T);
             var bytes = File.ReadAllBytes(f);
